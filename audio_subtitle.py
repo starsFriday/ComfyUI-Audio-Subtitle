@@ -167,7 +167,7 @@ class AudioSubtitle:
                 "fps": ("FLOAT", {"default": 25.0, "min": 0.1, "max": 120.0, "step": 0.01}),
                 "model_size": (["tiny", "base", "small", "medium", "large"], {"default": "small"}),
                 
-                "Fontname": ("STRING", {"default": "Arial", "multiline": False}),
+                "Fontname": (["Arial", "WenQuanYi Zen Hei"], {"default": "Arial"}),    # apt-get install fonts-wqy-zenhei
                 "Fontsize": ("INT", {"default": 10, "min": 5, "max": 100}),
                 
                 # --- 颜色选择 ---
