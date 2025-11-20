@@ -1,0 +1,435 @@
+{
+  "id": "148d22c7-3ea3-413e-a6ae-a9d0fb11126c",
+  "revision": 0,
+  "last_node_id": 4,
+  "last_link_id": 7,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "VHS_VideoInfo",
+      "pos": [
+        -2051.3512829412916,
+        1135.5701326213969
+      ],
+      "size": [
+        157.4765625,
+        206
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "视频信息",
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "label": "初始FPS🟨",
+          "name": "source_fps🟨",
+          "type": "FLOAT",
+          "links": [
+            7
+          ]
+        },
+        {
+          "label": "初始帧数🟨",
+          "name": "source_frame_count🟨",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "初始时长🟨",
+          "name": "source_duration🟨",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "label": "初始宽度🟨",
+          "name": "source_width🟨",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "初始高度🟨",
+          "name": "source_height🟨",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "选中FPS🟦",
+          "name": "loaded_fps🟦",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "label": "选中帧数🟦",
+          "name": "loaded_frame_count🟦",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "选中时长🟦",
+          "name": "loaded_duration🟦",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "label": "选中宽度🟦",
+          "name": "loaded_width🟦",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "选中高度🟦",
+          "name": "loaded_height🟦",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "972c87da577b47211c4e9aeed30dc38c7bae607f",
+        "Node name for S&R": "VHS_VideoInfo"
+      },
+      "widgets_values": {}
+    },
+    {
+      "id": 2,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        -1791.6433109721925,
+        692.0464383807245
+      ],
+      "size": [
+        262.2990779052209,
+        767.9850683690495
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "label": "音频",
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 3
+        },
+        {
+          "label": "批次管理",
+          "name": "meta_batch",
+          "shape": 7,
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        },
+        {
+          "name": "frame_rate",
+          "type": "FLOAT",
+          "widget": {
+            "name": "frame_rate"
+          },
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "label": "文件名",
+          "name": "Filenames",
+          "type": "VHS_FILENAMES"
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "8e4d79471bf1952154768e8435a9300077b534fa",
+        "Node name for S&R": "VHS_VideoCombine",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": {
+        "frame_rate": 25,
+        "loop_count": 0,
+        "filename_prefix": "Wan",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": false,
+        "trim_to_audio": false,
+        "pingpong": false,
+        "save_output": true,
+        "videopreview": {
+          "paused": false,
+          "hidden": false,
+          "params": {
+            "filename": "Wan_00010-audio.mp4",
+            "workflow": "Wan_00010.png",
+            "fullpath": "/root/tangfan/code/ComfyUI/output/Wan_00010-audio.mp4",
+            "format": "video/h264-mp4",
+            "subfolder": "",
+            "type": "output",
+            "frame_rate": 25
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "AudioSubtitle",
+      "pos": [
+        -2106.2058509683498,
+        701.4431710378927
+      ],
+      "size": [
+        270,
+        362
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 5
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 6
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "widget": {
+            "name": "fps"
+          },
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "frames",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            3
+          ]
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AudioSubtitle"
+      },
+      "widgets_values": [
+        25,
+        "small",
+        "Arial",
+        8,
+        "&H000000FF",
+        "&H0000FFFF",
+        "&H80000000",
+        3,
+        1,
+        0,
+        2,
+        25
+      ]
+    },
+    {
+      "id": 4,
+      "type": "VHS_LoadVideo",
+      "pos": [
+        -2396.641643015606,
+        706.7619647961678
+      ],
+      "size": [
+        240,
+        720
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "批次管理",
+          "name": "meta_batch",
+          "shape": 7,
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "图像",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            5
+          ]
+        },
+        {
+          "label": "帧计数",
+          "name": "frame_count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "音频",
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            6
+          ]
+        },
+        {
+          "label": "视频信息",
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "972c87da577b47211c4e9aeed30dc38c7bae607f",
+        "Node name for S&R": "VHS_LoadVideo"
+      },
+      "widgets_values": {
+        "video": "a (1).mp4",
+        "force_rate": 0,
+        "custom_width": 0,
+        "custom_height": 0,
+        "frame_load_cap": 0,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "AnimateDiff",
+        "choose video to upload": "image",
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "a (1).mp4",
+            "type": "input",
+            "format": "video/mp4",
+            "force_rate": 0,
+            "custom_width": 0,
+            "custom_height": 0,
+            "frame_load_cap": 0,
+            "skip_first_frames": 0,
+            "select_every_nth": 1
+          },
+          "muted": true
+        }
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      4,
+      3,
+      1,
+      0,
+      "VHS_VIDEOINFO"
+    ],
+    [
+      2,
+      3,
+      0,
+      2,
+      0,
+      "IMAGE"
+    ],
+    [
+      3,
+      3,
+      1,
+      2,
+      1,
+      "AUDIO"
+    ],
+    [
+      4,
+      3,
+      2,
+      2,
+      4,
+      "FLOAT"
+    ],
+    [
+      5,
+      4,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ],
+    [
+      6,
+      4,
+      2,
+      3,
+      1,
+      "AUDIO"
+    ],
+    [
+      7,
+      1,
+      0,
+      3,
+      2,
+      "FLOAT"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ue_links": [],
+    "ds": {
+      "scale": 0.7247295000000008,
+      "offset": [
+        3093.9443160895808,
+        -262.95552357238967
+      ]
+    },
+    "frontendVersion": "1.28.8",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
