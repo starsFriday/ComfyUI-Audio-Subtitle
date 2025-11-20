@@ -179,7 +179,7 @@ class AudioSubtitle:
                 "OutlineAlpha": ("INT", {"default": 0, "min": 0, "max": 255, "step": 1}),
                 "BackAlpha": ("INT", {"default": 128, "min": 0, "max": 255, "step": 1}), # 默认半透明背景
                 
-                "BorderStyle": ([1, 3]), # 3=不透明背景框, 1=普通描边
+                "BorderStyle": ([1, 3], {"default": 3}), # 3=不透明背景框, 1=普通描边
                 "Outline": ("INT", {"default": 1, "min": 0, "max": 10}),
                 "Shadow": ("INT", {"default": 0, "min": 0, "max": 10}),
                 "Alignment": ("INT", {"default": 2, "min": 1, "max": 9}), # 2 = 底部居中
