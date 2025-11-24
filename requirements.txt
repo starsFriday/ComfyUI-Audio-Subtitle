@@ -1,0 +1,4 @@
+openai-whisper
+imageio[ffmpeg] 
+torchaudio 
+numpy
