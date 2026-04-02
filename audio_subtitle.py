@@ -6,6 +6,8 @@ import sys
 import subprocess
 import tempfile
 import shutil
+import re
+import unicodedata
 import torchaudio
 import imageio
 from datetime import timedelta
@@ -137,14 +139,229 @@ def format_timestamp(seconds):
     milliseconds = int(td.microseconds / 1000)
     return f"{hours:02}:{minutes:02}:{secs:02},{milliseconds:03}"
 
-def generate_srt(transcription):
-    """生成 SRT 内容"""
+def _char_display_units(char):
+    if char.isspace():
+        return 0.35
+    if unicodedata.east_asian_width(char) in {"W", "F"}:
+        return 1.0
+    if char in set(",.;:!?\"'，。！？；：、】【》）」』、】【…"):
+        return 0.5
+    return 0.6
+
+
+def _tokenize_for_wrap(text):
+    normalized = re.sub(r"\s+", " ", text.strip())
+    tokens = []
+    i = 0
+    while i < len(normalized):
+        char = normalized[i]
+        if char == " ":
+            tokens.append(char)
+            i += 1
+            continue
+        if unicodedata.east_asian_width(char) in {"W", "F"}:
+            tokens.append(char)
+            i += 1
+            continue
+        j = i
+        while j < len(normalized):
+            current = normalized[j]
+            if current == " " or unicodedata.east_asian_width(current) in {"W", "F"}:
+                break
+            j += 1
+        tokens.append(normalized[i:j])
+        i = j
+    return tokens
+
+
+def _token_display_units(token):
+    return sum(_char_display_units(ch) for ch in token)
+
+
+def _split_token_to_fit(token, max_units):
+    if not token:
+        return []
+
+    chunks = []
+    current = ""
+    current_units = 0.0
+    for ch in token:
+        ch_units = _char_display_units(ch)
+        if current and current_units + ch_units > max_units:
+            chunks.append(current)
+            current = ch
+            current_units = ch_units
+        else:
+            current += ch
+            current_units += ch_units
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _normalize_tokens_for_wrap(tokens, max_units):
+    normalized = []
+    for token in tokens:
+        token_units = _token_display_units(token)
+        if token.strip() and token_units > max_units:
+            normalized.extend(_split_token_to_fit(token, max_units))
+        else:
+            normalized.append(token)
+    return normalized
+
+
+def _line_units(tokens, start, end):
+    return sum(_token_display_units(token) for token in tokens[start:end])
+
+
+def _build_lines_from_breaks(tokens, breaks):
+    lines = []
+    start = 0
+    for end in breaks:
+        line = "".join(tokens[start:end]).strip()
+        if line:
+            lines.append(line)
+        start = end
+    return lines
+
+
+def _best_wrap_for_line_count(tokens, max_units, line_count):
+    n = len(tokens)
+    memo = {}
+
+    def solve(start, remaining_lines):
+        key = (start, remaining_lines)
+        if key in memo:
+            return memo[key]
+
+        if start >= n:
+            result = (0.0, [])
+            memo[key] = result
+            return result
+
+        if remaining_lines == 1:
+            units = _line_units(tokens, start, n)
+            if units <= max_units:
+                result = ((max_units - units) ** 2, [n])
+            else:
+                result = None
+            memo[key] = result
+            return result
+
+        best = None
+        for end in range(start + 1, n + 1):
+            units = _line_units(tokens, start, end)
+            if units > max_units:
+                break
+            rest = solve(end, remaining_lines - 1)
+            if rest is None:
+                continue
+            score = (max_units - units) ** 2 + rest[0]
+            candidate = (score, [end] + rest[1])
+            if best is None or candidate[0] < best[0]:
+                best = candidate
+
+        memo[key] = best
+        return best
+
+    result = solve(0, line_count)
+    if result is None:
+        return None
+    return _build_lines_from_breaks(tokens, result[1])
+
+
+def _greedy_wrap(tokens, max_units):
+    lines = []
+    current_line = []
+    current_units = 0.0
+
+    def flush_line():
+        nonlocal current_line, current_units
+        line = "".join(current_line).strip()
+        if line:
+            lines.append(line)
+        current_line = []
+        current_units = 0.0
+
+    for token in tokens:
+        token_units = _token_display_units(token)
+        token_text = token.lstrip() if token.isspace() else token
+        token_text_units = _token_display_units(token_text)
+
+        if not current_line:
+            if token_text:
+                current_line.append(token_text)
+                current_units = token_text_units
+            continue
+
+        if current_units + token_units <= max_units:
+            current_line.append(token)
+            current_units += token_units
+            continue
+
+        flush_line()
+        if token_text:
+            current_line.append(token_text)
+            current_units = token_text_units
+
+    flush_line()
+    return lines
+
+
+def wrap_subtitle_text(text, max_units):
+    if not text:
+        return text
+
+    tokens = _normalize_tokens_for_wrap(_tokenize_for_wrap(text), max_units)
+    total_units = _line_units(tokens, 0, len(tokens))
+    fullwidth_ratio = _fullwidth_ratio(text)
+
+    if fullwidth_ratio >= 0.6:
+        # 对日语/CJK 更激进：长句不能因为“勉强放得下”就硬撑一行。
+        single_line_limit = min(max_units * 0.48, 18)
+        two_line_limit = min(max_units * 1.05, 36)
+    else:
+        single_line_limit = max_units * 0.88
+        two_line_limit = max_units * 1.75
+
+    if total_units <= single_line_limit:
+        line_candidates = (1, 2, 3)
+    elif total_units <= two_line_limit:
+        line_candidates = (2, 3)
+    else:
+        line_candidates = (3,)
+
+    for line_count in line_candidates:
+        lines = _best_wrap_for_line_count(tokens, max_units, line_count)
+        if lines is not None:
+            return "\n".join(lines)
+
+    lines = _greedy_wrap(tokens, max_units)
+    return "\n".join(lines) if lines else text
+
+
+def _fullwidth_ratio(text):
+    visible_chars = [ch for ch in text if not ch.isspace()]
+    if not visible_chars:
+        return 0.0
+    fullwidth_count = sum(1 for ch in visible_chars if unicodedata.east_asian_width(ch) in {"W", "F"})
+    return fullwidth_count / len(visible_chars)
+
+
+def generate_srt(transcription, max_units=None):
+    """生成 SRT 内容，并按画面宽度预换行。"""
     srt_content = ""
     for i, segment in enumerate(transcription['segments']):
         start = format_timestamp(segment['start'])
         end = format_timestamp(segment['end'])
         text = segment['text'].strip()
-        
+        if max_units is not None:
+            effective_max_units = max_units
+            if _fullwidth_ratio(text) >= 0.6:
+                # 日语/CJK 进一步压窄单行容量，避免视觉上仍然过长。
+                effective_max_units = max(min(max_units * 0.62, 18), 6)
+            text = wrap_subtitle_text(text, effective_max_units)
+
         srt_content += f"{i + 1}\n"
         srt_content += f"{start} --> {end}\n"
         srt_content += f"{text}\n\n"
@@ -229,6 +446,11 @@ class AudioSubtitle:
 
             video_input_path = os.path.join(temp_dir, "input_visual.mp4")
             video_np = (images.cpu().numpy() * 255).astype(np.uint8)
+            video_height = int(video_np.shape[1])
+            video_width = int(video_np.shape[2])
+            margin_h = max(int(video_width * 0.02), Fontsize * 2)
+            subtitle_width = max(video_width - margin_h * 2, int(video_width * 0.5))
+            max_text_units = max(subtitle_width / max(Fontsize, 1), 6)
             imageio.mimwrite(video_input_path, video_np, fps=fps, codec='libx264', quality=8)
 
             if self.model is None or self.current_model_size != model_size:
@@ -237,7 +459,7 @@ class AudioSubtitle:
                 self.current_model_size = model_size
 
             result = self.model.transcribe(audio_path, verbose=False)
-            srt_content = generate_srt(result)
+            srt_content = generate_srt(result, max_units=max_text_units)
             
             srt_file_name = "subtitles.srt"
             srt_path = os.path.join(temp_dir, srt_file_name)
@@ -254,7 +476,10 @@ class AudioSubtitle:
                 f"Outline={Outline},"
                 f"Shadow={Shadow},"
                 f"Alignment={Alignment},"
-                f"MarginV={MarginV}"
+                f"MarginL={margin_h},"
+                f"MarginR={margin_h},"
+                f"MarginV={MarginV},"
+                f"WrapStyle=0"
             )
             
             print(f"Style Config: {style}")
