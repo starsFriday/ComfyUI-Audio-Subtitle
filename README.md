@@ -42,7 +42,6 @@ git clone https://github.com/starsFriday/ComfyUI-Audio-Subtitle.git
 
 ```bash
 pip install openai-whisper imageio[ffmpeg] torchaudio numpy
-sudo apt-get install fonts-wqy-zenhei
 ```
 
 ---

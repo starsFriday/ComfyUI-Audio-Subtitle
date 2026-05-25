@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import whisper
 import os
-import sys
 import subprocess
 import tempfile
 import shutil
@@ -11,6 +10,150 @@ import unicodedata
 import torchaudio
 import imageio
 from datetime import timedelta
+from fractions import Fraction
+
+LOG_PREFIX = "[AudioSubtitle]"
+
+
+def _normalise_image_tensor(images):
+    if images is None:
+        raise ValueError("images 不能为空")
+
+    if isinstance(images, torch.Tensor):
+        frames = images.detach()
+    else:
+        frames = torch.as_tensor(images).detach()
+
+    if frames.dim() == 3:
+        frames = frames.unsqueeze(0)
+    if frames.dim() != 4:
+        raise ValueError(f"images 必须是 4 维张量，当前维度: {frames.dim()}")
+
+    if frames.shape[1] in (3, 4) and frames.shape[-1] not in (3, 4):
+        frames = frames.permute(0, 2, 3, 1)
+    if frames.shape[-1] == 4:
+        frames = frames[..., :3]
+    if frames.shape[-1] != 3:
+        raise ValueError("images 必须是 [frames,height,width,3/4] 或 [frames,3/4,height,width]")
+    if frames.shape[0] == 0:
+        raise ValueError("images 至少需要 1 帧")
+
+    return frames.contiguous()
+
+
+def _frame_size(images):
+    frames = _normalise_image_tensor(images)
+    return int(frames.shape[1]), int(frames.shape[2])
+
+
+def _image_tensor_to_uint8_tensor(images):
+    frames = _normalise_image_tensor(images).cpu()
+    if torch.is_floating_point(frames):
+        frames = frames.to(torch.float32)
+        if frames.numel() and float(frames.max()) > 1.0 + 1e-6:
+            frames = frames / 255.0
+        frames = (frames.clamp(0.0, 1.0) * 255.0).round().to(torch.uint8)
+    else:
+        frames = frames.clamp(0, 255).to(torch.uint8)
+    return frames.contiguous()
+
+
+def _pad_to_even_rgb(frames):
+    if frames.shape[2] % 2:
+        frames = torch.cat((frames, frames[:, :, -1:, :]), dim=2)
+    if frames.shape[1] % 2:
+        frames = torch.cat((frames, frames[:, -1:, :, :]), dim=1)
+    return frames.contiguous()
+
+
+def _image_tensor_to_uint8_numpy(images):
+    return _pad_to_even_rgb(_image_tensor_to_uint8_tensor(images)).numpy()
+
+
+def _save_visual_video_pyav(images, fps, video_path, crf=19):
+    import av
+
+    fps_value = max(float(fps or 0), 1.0)
+    output_dir = os.path.dirname(os.path.abspath(video_path))
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    frames = _pad_to_even_rgb(_image_tensor_to_uint8_tensor(images))
+    frame_rate_fraction = Fraction(round(fps_value * 1000), 1000)
+
+    with av.open(video_path, mode="w", format="mp4") as output:
+        video_stream = output.add_stream("h264", rate=frame_rate_fraction)
+        video_stream.width = int(frames.shape[2])
+        video_stream.height = int(frames.shape[1])
+        video_stream.pix_fmt = "yuv420p"
+        video_stream.options = {"crf": str(int(crf))}
+
+        for image in frames:
+            frame = av.VideoFrame.from_ndarray(image.numpy(), format="rgb24")
+            frame = frame.reformat(format="yuv420p")
+            for packet in video_stream.encode(frame):
+                output.mux(packet)
+
+        for packet in video_stream.encode(None):
+            output.mux(packet)
+
+
+def _save_visual_video_fast(images, fps, video_path):
+    try:
+        print(f"{LOG_PREFIX} 使用独立 PyAV 写入临时视频...")
+        _save_visual_video_pyav(images, fps, video_path, crf=19)
+        return
+    except Exception as exc:
+        print(f"{LOG_PREFIX} PyAV 写入失败，回退 imageio: {exc}")
+
+    video_np = _image_tensor_to_uint8_numpy(images)
+    imageio.mimwrite(video_path, video_np, fps=fps, codec="libx264", quality=8)
+
+
+def _load_video_frames_imageio(video_path):
+    reader = imageio.get_reader(video_path)
+    output_frames = []
+    try:
+        for frame in reader:
+            output_frames.append(frame)
+    finally:
+        reader.close()
+
+    if not output_frames:
+        raise RuntimeError("输出视频未读取到任何帧")
+
+    frames_np = np.asarray(output_frames)
+    if frames_np.shape[-1] > 3:
+        frames_np = frames_np[..., :3]
+    if frames_np.dtype != np.uint8:
+        frames_np = np.clip(frames_np, 0, 255).astype(np.uint8)
+    frames_np = np.ascontiguousarray(frames_np)
+    return torch.from_numpy(frames_np).to(torch.float32).div_(255.0)
+
+
+def _load_video_frames_fast(video_path):
+    try:
+        import decord
+
+        with decord.bridge.use_torch():
+            reader = decord.VideoReader(video_path, ctx=decord.cpu(0))
+            frame_count = len(reader)
+            if frame_count <= 0:
+                raise RuntimeError("decord 未读取到视频帧")
+            frames = reader.get_batch(range(frame_count))
+
+        if frames.dtype == torch.uint8:
+            frames = frames.to(torch.float32).div_(255.0)
+        else:
+            frames = frames.to(torch.float32)
+            if frames.numel() and float(frames.max()) > 1.0:
+                frames.div_(255.0)
+            frames.clamp_(0.0, 1.0)
+        return frames.contiguous()
+    except Exception as exc:
+        print(f"{LOG_PREFIX} decord 快速读取失败，回退 imageio: {exc}")
+        return _load_video_frames_imageio(video_path)
+
 
 # ==========================================
 # 颜色定义库 (RGB HEX 格式)
@@ -445,13 +588,11 @@ class AudioSubtitle:
             torchaudio.save(audio_path, waveform, sample_rate)
 
             video_input_path = os.path.join(temp_dir, "input_visual.mp4")
-            video_np = (images.cpu().numpy() * 255).astype(np.uint8)
-            video_height = int(video_np.shape[1])
-            video_width = int(video_np.shape[2])
+            _, video_width = _frame_size(images)
             margin_h = max(int(video_width * 0.02), Fontsize * 2)
             subtitle_width = max(video_width - margin_h * 2, int(video_width * 0.5))
             max_text_units = max(subtitle_width / max(Fontsize, 1), 6)
-            imageio.mimwrite(video_input_path, video_np, fps=fps, codec='libx264', quality=8)
+            _save_visual_video_fast(images, fps, video_input_path)
 
             if self.model is None or self.current_model_size != model_size:
                 print(f"Loading Whisper model: {model_size}")
@@ -489,12 +630,15 @@ class AudioSubtitle:
             ffmpeg_cmd = [
                 "ffmpeg",
                 "-y",
+                "-hide_banner",
+                "-loglevel", "error",
                 "-i", "input_visual.mp4",
                 "-i", "temp_audio.wav",
                 "-vf", f"subtitles='{srt_file_name}':force_style='{style}'",
                 "-c:v", "libx264",
-                "-preset", "fast", 
+                "-preset", "veryfast", 
                 "-crf", "18",
+                "-threads", "0",
                 "-c:a", "aac",
                 "-map", "0:v",
                 "-map", "1:a",
@@ -506,13 +650,7 @@ class AudioSubtitle:
             if not os.path.exists(output_video_path):
                 raise Exception("FFmpeg 输出文件未生成")
 
-            reader = imageio.get_reader(output_video_path)
-            output_frames = []
-            for frame in reader:
-                output_frames.append(frame)
-            reader.close()
-
-            output_tensor = torch.from_numpy(np.array(output_frames)).float() / 255.0
+            output_tensor = _load_video_frames_fast(output_video_path)
             
             print("处理完成，清理临时文件。")
             
